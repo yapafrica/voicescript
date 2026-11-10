@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VoiceScript - Read & Record</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body, html {
+            overscroll-behavior: none;
+            touch-action: manipulation;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.05); }
+        }
+        .recording-pulse {
+            animation: pulse-red 1.5s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col font-sans select-none h-screen w-screen overflow-hidden">
+
+    <!-- TOP TOOLBAR: Compact, Single-line mobile controls -->
+    <header class="bg-slate-900 border-b border-slate-800 px-3 py-2 flex items-center justify-between shadow-md shrink-0 z-50 h-[52px]">
+        <!-- Brand & File Actions -->
+        <div class="flex items-center space-x-2 shrink-0">
+            <div class="bg-indigo-600 text-white font-black px-2 py-1 rounded text-xs tracking-wider shadow">VS</div>
+            <button onclick="document.getElementById('file-upload').click()" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 rounded-md transition active:scale-95 flex items-center space-x-1" title="Import Text File">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                <span class="text-xs font-medium hidden sm:inline">Open</span>
+            </button>
+            <input type="file" id="file-upload" accept=".txt,.md" class="hidden" onchange="handleTextImport(event)">
+        </div>
+
+        <!-- Timer & Recording Status Indicator -->
+        <div class="flex items-center space-x-2">
+            <div id="status-badge" class="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800">
+                <div id="status-dot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></div>
+                <span id="timer-display" class="text-xs font-mono font-bold text-slate-300">00:00</span>
+            </div>
+        </div>
+
+        <!-- Record / Stop Action Button -->
+        <div class="flex items-center space-x-1 shrink-0">
+            <button id="record-btn" onclick="toggleRecording()" class="bg-rose-600 hover:bg-rose-500 text-white font-semibold px-3 py-1.5 rounded-lg transition active:scale-95 flex items-center space-x-1.5 shadow text-xs">
+                <svg id="record-icon" class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                <span id="record-text">Record</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN VIEW: Fully filling text area for manual scroll & read -->
+    <main class="flex-1 flex flex-col p-2 bg-slate-950 overflow-hidden relative">
+        <textarea id="script-textarea" 
+            class="w-full h-full bg-slate-900/80 text-slate-100 placeholder-slate-500 border border-slate-800 rounded-xl p-4 text-base sm:text-lg leading-relaxed resize-none focus:outline-none focus:border-indigo-500 transition shadow-inner overflow-y-auto"
+            placeholder="Type your script here or tap 'Open' to import a text file. Scroll manually at your own pace while recording..."></textarea>
+    </main>
+
+    <!-- Audio Playback / Save Modal Overlay -->
+    <div id="preview-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 hidden flex flex-col items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center max-w-sm w-full text-center space-y-4">
+            <div class="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-bold text-slate-100">Recording Complete!</h3>
+                <p class="text-xs text-slate-400 mt-1">Preview your recorded audio below or download it immediately.</p>
+            </div>
+
+            <audio id="audio-playback" controls class="w-full rounded-lg bg-slate-950 border border-slate-800"></audio>
+
+            <div class="flex items-center space-x-2 w-full pt-2">
+                <button onclick="closePreviewModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium py-2 px-3 rounded-lg text-xs transition active:scale-95">Discard</button>
+                <button onclick="downloadRecording()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 px-3 rounded-lg text-xs transition active:scale-95 shadow flex items-center justify-center space-x-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    <span>Save Audio</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CLIENT-SIDE SCRIPT -->
+    <script>
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let recordedAudioBlob = null;
+        let isRecording = false;
+        
+        let timerInterval = null;
+        let secondsElapsed = 0;
+
+        const recordBtn = document.getElementById('record-btn');
+        const recordText = document.getElementById('record-text');
+        const recordIcon = document.getElementById('record-icon');
+        const statusDot = document.getElementById('status-dot');
+        const timerDisplay = document.getElementById('timer-display');
+        const scriptTextarea = document.getElementById('script-textarea');
+        const previewModal = document.getElementById('preview-modal');
+        const audioPlayback = document.getElementById('audio-playback');
+
+        // Text File Import Handler
+        function handleTextImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                scriptTextarea.value = e.target.result;
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            audioChunks = [];
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Determine best supported mime type
+                let mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = '';
+                    }
+                }
+
+                mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    recordedAudioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(recordedAudioBlob);
+                    audioPlayback.src = audioUrl;
+                    previewModal.classList.remove('hidden');
+                    
+                    // Stop mic stream tracks
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start(250); // Collect data every 250ms
+                isRecording = true;
+
+                // UI updates for recording state
+                recordBtn.classList.remove('bg-rose-600', 'hover:bg-rose-500');
+                recordBtn.classList.add('bg-slate-700', 'hover:bg-slate-600', 'recording-pulse');
+                recordText.innerText = 'Stop';
+                recordIcon.innerHTML = '<rect x="6" y="6" width="12" height="12"/>';
+                
+                statusDot.classList.remove('bg-slate-500');
+                statusDot.classList.add('bg-rose-500', 'animate-ping');
+
+                // Start timer
+                secondsElapsed = 0;
+                updateTimerDisplay();
+                timerInterval = setInterval(() => {
+                    secondsElapsed++;
+                    updateTimerDisplay();
+                }, 1000);
+
+            } catch (err) {
+                console.error("Microphone access denied or error:", err);
+                alert("Microphone access is required to record. Please ensure permissions are granted.");
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+
+                // Reset UI
+                clearInterval(timerInterval);
+                recordBtn.classList.remove('bg-slate-700', 'hover:bg-slate-600', 'recording-pulse');
+                recordBtn.classList.add('bg-rose-600', 'hover:bg-rose-500');
+                recordText.innerText = 'Record';
+                recordIcon.innerHTML = '<circle cx="12" cy="12" r="8"/>';
+                
+                statusDot.classList.remove('bg-rose-500', 'animate-ping');
+                statusDot.classList.add('bg-slate-500');
+            }
+        }
+
+        function updateTimerDisplay() {
+            const mins = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
+            const secs = (secondsElapsed % 60).toString().padStart(2, '0');
+            timerDisplay.innerText = `${mins}:${secs}`;
+        }
+
+        function closePreviewModal() {
+            previewModal.classList.add('hidden');
+            audioPlayback.pause();
+            audioPlayback.src = '';
+        }
+
+        function downloadRecording() {
+            if (!recordedAudioBlob) return;
+            const url = URL.createObjectURL(recordedAudioBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            const ext = recordedAudioBlob.type.includes('ogg') ? 'ogg' : 'webm';
+            a.download = `VoiceScript_Recording_${Date.now()}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            closePreviewModal();
+        }
+    </script>
+</body>
+</html>
